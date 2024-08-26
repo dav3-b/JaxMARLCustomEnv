@@ -28,17 +28,13 @@ import matplotlib
 @struct.dataclass
 class State:
     """ Basic state """
-    escape_pos: jax.Array
-    guard_pos: jax.Array
-    prisoner_pos: jax.Array
-    done: jax.Array
-    timestep: int
+    escape_pos: chex.Array
+    guard_pos: chex.Array
+    prisoner_pos: chex.Array
+    done: chex.Array
+    step: int
     
-class CustomEnv(MultiAgentEnv):
-
-    metadata = {
-        "name": "custom_env_v0"
-    }
+class CustomEnv():
 
     def __init__(self, max_steps=25):
         self.agents = ("prisoner", "guard")
@@ -46,11 +42,11 @@ class CustomEnv(MultiAgentEnv):
         self.max_steps = max_steps
 
     @partial(jax.jit, static_argnums=[0])
-    def get_obs(self, state: State) -> Dict[str, jax.Array]:
+    def get_obs(self, state: State) -> Dict[str, chex.Array]:
         """Return dictionary of agent observations"""
 
         @partial(jax.vmap)
-        def _op_obs(vec: jax.Array) -> jax.Array:
+        def _op_obs(vec: chex.Array) -> chex.Array:
             return vec[0] + 7 * vec[1]
         
         state_stacked = jnp.stack([
@@ -63,7 +59,7 @@ class CustomEnv(MultiAgentEnv):
         return {a: obs for a in self.agents}
 
     @partial(jax.jit, static_argnums=[0])
-    def reset(self, key: jax.Array) -> Tuple[Dict, State]:
+    def reset(self, key: chex.Array) -> Tuple[Dict, State]:
         key_x, key_y = jax.random.split(key)
 
         escape_pos = jnp.concatenate([
@@ -76,12 +72,12 @@ class CustomEnv(MultiAgentEnv):
             guard_pos=jnp.array((6, 6)), 
             prisoner_pos=jnp.array((0, 0)), 
             done=jnp.full(len(self.agents), False),
-            timestep=0
+            step=0
         )
         
         return self.get_obs(state), state
 
-    def _get_new_pos(self, state: State, actions: Dict) -> Tuple[jax.Array, jax.Array]:
+    def _get_new_pos(self, state: State, actions: Dict) -> Tuple[chex.Array, chex.Array]:
         acts = [actions["prisoner"], actions["guard"]]
         prisoner_new_pos = [state.prisoner_pos[0].item(), state.prisoner_pos[1].item()]
         guard_new_pos = [state.guard_pos[0].item(), state.guard_pos[1].item()]
@@ -100,7 +96,7 @@ class CustomEnv(MultiAgentEnv):
         prisoner_new_pos, guard_new_pos = new_pos
         return jnp.array(prisoner_new_pos), jnp.array(guard_new_pos)
 
-    def _get_reward(self, prisoner_pos, guard_pos, escape_pos, timestep) -> Tuple[Dict, jax.Array]:
+    def _get_reward(self, prisoner_pos, guard_pos, escape_pos, step) -> Tuple[Dict, chex.Array]:
         rewards = {a: 0 for a in self.agents}
         dones = None
 
@@ -113,25 +109,25 @@ class CustomEnv(MultiAgentEnv):
             dones = jnp.full(len(self.agents), True)
         
         # Check truncation condition
-        if timestep >= self.max_steps:
+        if step >= self.max_steps:
             rewards = {"guard": 0, "prisoner": 0}
             dones = jnp.full(len(self.agents), True)
         
         return rewards, dones
 
     #@partial(jax.jit, static_argnums=[0])
-    def step(self, key: jax.Array, state: State, actions: Dict) -> Tuple[Dict, State, Dict, jax.Array, Dict]:
+    def step(self, key: chex.Array, state: State, actions: Dict) -> Tuple[Dict, State, Dict, chex.Array, Dict]:
         prisoner_new_pos, guard_new_pos = self._get_new_pos(state, actions)
 
-        rewards, dones = self._get_reward(prisoner_new_pos, guard_new_pos, state.escape_pos, state.timestep)
+        rewards, dones = self._get_reward(prisoner_new_pos, guard_new_pos, state.escape_pos, state.step)
         if dones == None:
-            dones = jnp.full(len(self.agents), state.timestep >= self.max_steps) 
+            dones = jnp.full(len(self.agents), state.step >= self.max_steps) 
         
             state = state.replace(
                 guard_pos=guard_new_pos,
                 prisoner_pos=prisoner_new_pos,
                 done=dones,
-                timestep=state.timestep + 1
+                step=state.step + 1
             )
             
             obs = self.get_obs(state)
